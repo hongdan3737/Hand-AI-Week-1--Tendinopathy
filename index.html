@@ -186,6 +186,22 @@
   </div>
 </section>
 
+<!-- FORCED REVIEW -->
+<section id="forcedreview" class="screen">
+  <div class="card">
+    <h2>&#9208; Reread required</h2>
+    <p>You&#8217;ve missed <strong>3 questions in a row</strong>. Before continuing, reread the source article below in full, then confirm you&#8217;re finished.</p>
+    <div class="tag" id="frTopic" style="margin-bottom:10px">&mdash;</div>
+    <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;height:70vh">
+      <iframe id="frPdfFrame" src="" style="width:100%;height:100%;border:none" title="Source article"></iframe>
+    </div>
+    <p class="note" style="margin-top:8px">PDF not displaying? <a id="frPdfLink" href="#" target="_blank" rel="noopener">Open it in a new tab</a> instead.</p>
+    <div style="margin-top:18px;text-align:center">
+      <button class="btn" onclick="finishForcedReview()">&#9989; I&#8217;ve finished reviewing &mdash; resume questions</button>
+    </div>
+  </div>
+</section>
+
 <!-- FLASHCARD BROWSE -->
 <section id="flash" class="screen">
   <div class="card">
@@ -542,10 +558,20 @@ const FLASH = [
    ===================================================================== */
 let state = {
   startTime:null, timerInt:null, streak:0, totalCorrect:0, totalAnswered:0,
-  sessionOrder:[], sessionPos:0, answered:false, fOrder:[], fIdx:0, ended:false
+  sessionOrder:[], sessionPos:0, answered:false, fOrder:[], fIdx:0, ended:false,
+  wrongStreak:0, lastMissedRef:null
 };
 const TIME_LIMIT = 30*60;
 const STREAK_GOAL = 10;
+const WRONG_STREAK_LIMIT = 3;
+const PDF_MAP = {
+  greens:  'refs/greens.pdf',
+  ryzewicz:'refs/ryzewicz.pdf',
+  smidt:   'refs/smidt.pdf',
+  blood:   'refs/blood.pdf',
+  wagner:  'refs/wagner.pdf',
+  houck:   'refs/houck.pdf'
+};
 
 function show(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -650,7 +676,7 @@ function gradeFlash(knew){
   const fb=knew
     ? `<strong>✓ Counted.</strong> Nice recall.<div class="src">${REFS[c.ref]}</div>`
     : `<strong>✗ Streak reset.</strong> Review the answer above, then continue.<div class="src">${REFS[c.ref]}</div>`;
-  recordResult(knew,fb);
+  recordResult(knew,fb,c.ref);
 }
 function answer(btn){
   if(state.answered) return;
@@ -673,11 +699,19 @@ function answer(btn){
       <div style="margin-top:8px"><button class="reviewlink" onclick="reviewSection('${q.review}')">📖 Review: ${sec?sec.title:'study guide'}</button></div>
       <div class="src">${REFS[q.ref]}</div>`;
   }
-  recordResult(correct,fb);
+  recordResult(correct,fb,q.ref);
 }
-function recordResult(correct,feedbackHTML){
+function recordResult(correct,feedbackHTML,ref){
   state.totalAnswered++;
-  if(correct){ state.streak++; state.totalCorrect++; } else { state.streak=0; }
+  if(correct){
+    state.streak++; state.totalCorrect++; state.wrongStreak=0;
+  } else {
+    state.streak=0; state.wrongStreak++; state.lastMissedRef=ref;
+    if(state.wrongStreak<WRONG_STREAK_LIMIT){
+      const remaining=WRONG_STREAK_LIMIT-state.wrongStreak;
+      feedbackHTML+=`<div class="wp" style="margin-top:8px">⚠️ ${state.wrongStreak} of ${WRONG_STREAK_LIMIT} missed in a row — ${remaining} more miss${remaining===1?'':'es'} and you'll pause to reread the source article before continuing.</div>`;
+    }
+  }
   updateStreakUI(); renderDots();
   document.getElementById('qCount').textContent='Correct: '+state.totalCorrect+' / '+state.totalAnswered;
   const fb=document.getElementById('qFeedback');
@@ -694,9 +728,28 @@ function reviewSection(id){
   },120);
 }
 function nextItem(){
+  if(state.wrongStreak>=WRONG_STREAK_LIMIT){ showForcedReview(); return; }
+  advanceItem();
+}
+function advanceItem(){
   state.sessionPos++;
   if(state.sessionPos>=state.sessionOrder.length){ buildSession(); }
   renderItem();
+}
+function showForcedReview(){
+  const ref=state.lastMissedRef;
+  document.getElementById('frTopic').textContent=REFS[ref]||'Source article';
+  const file=PDF_MAP[ref];
+  const frame=document.getElementById('frPdfFrame');
+  const link=document.getElementById('frPdfLink');
+  if(file){ frame.src=file; link.href=file; link.style.display='inline'; }
+  else { frame.src='about:blank'; link.style.display='none'; }
+  show('forcedreview');
+}
+function finishForcedReview(){
+  state.wrongStreak=0;
+  show('quiz');
+  advanceItem();
 }
 
 function startFlash(){
@@ -738,7 +791,7 @@ function endSession(reason){
 }
 function restart(){
   clearInterval(state.timerInt);
-  state={startTime:null,timerInt:null,streak:0,totalCorrect:0,totalAnswered:0,sessionOrder:[],sessionPos:0,answered:false,fOrder:[],fIdx:0,ended:false};
+  state={startTime:null,timerInt:null,streak:0,totalCorrect:0,totalAnswered:0,sessionOrder:[],sessionPos:0,answered:false,fOrder:[],fIdx:0,ended:false,wrongStreak:0,lastMissedRef:null};
   document.getElementById('timerPill').textContent='⏱ 0:00';
   document.getElementById('streakPill').textContent='🔥 Streak 0';
   document.getElementById('statusBar').style.visibility='hidden';
